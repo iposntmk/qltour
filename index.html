@@ -1,0 +1,1482 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="cupcake">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tour Management App - Modern UI</title>
+    <!-- DaisyUI with Tailwind CSS included -->
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.2/dist/full.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- SheetJS for Excel Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" xintegrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Be Vietnam Pro', sans-serif;
+        }
+        /* Minor adjustments to DaisyUI components if needed */
+        .form-section { @apply card bg-base-100 shadow-lg border border-base-200 mb-6; }
+        .form-section .card-body { @apply p-4 sm:p-5; }
+        .sticky-header { @apply sticky top-0 z-40 bg-base-100/90 backdrop-blur-lg shadow-md; }
+        .sticky-footer { @apply sticky bottom-0 z-30 bg-base-100/95 backdrop-blur-lg border-t p-4; }
+        .tour-list-row td {
+            border-bottom-width: 0 !important;
+            padding-bottom: 0.25rem !important;
+        }
+        .action-row td {
+            padding-top: 0 !important;
+            padding-bottom: 0.75rem !important;
+        }
+    </style>
+</head>
+<body>
+
+<div id="app" class="max-w-4xl mx-auto pb-24">
+
+    <!-- Toast Notification Area -->
+    <div class="toast toast-top toast-end z-50">
+        <div v-for="t in toasts" :key="t.id" :class="['alert', t.type]">
+            <i :class="t.icon"></i>
+            <span>{{ t.message }}</span>
+        </div>
+    </div>
+
+    <!-- Main Header & Tabs -->
+    <header class="sticky-header">
+        <div class="p-4">
+            <h1 class="text-3xl font-bold text-base-content">Tour App</h1>
+            <p class="text-sm text-base-content/70">Quản lý tour du lịch chuyên nghiệp</p>
+        </div>
+        <div role="tablist" class="tabs tabs-bordered px-4">
+            <a role="tab" class="tab" @click="activeTab = 'tours'" :class="{'tab-active': activeTab === 'tours'}"><i class="fas fa-route mr-2"></i>QLT</a>
+            <a role="tab" class="tab" @click="activeTab = 'data'" :class="{'tab-active': activeTab === 'data'}"><i class="fas fa-database mr-2"></i>DLC</a>
+        </div>
+    </header>
+
+    <main class="p-4">
+        <!-- TOUR MANAGEMENT VIEW -->
+        <div v-if="activeTab === 'tours'">
+            <!-- Tour List View -->
+            <div v-if="!currentTour">
+                <div class="flex flex-col sm:flex-row gap-3 mb-4">
+                    <select v-model="filterMonth" class="select select-bordered sm:w-52">
+                        <option value="all">Tất cả tháng</option>
+                        <option v-for="month in 12" :value="month">{{ 'Tháng ' + month }}</option>
+                    </select>
+                    <button @click="showTourForm({})" class="btn btn-primary w-full sm:w-auto">
+                        <i class="fas fa-plus mr-2"></i>Thêm Tour
+                    </button>
+                    <div class="tooltip" :data-tip="filterMonth === 'all' ? 'Vui lòng chọn một tháng để xuất' : ''">
+                        <button @click="exportToExcel(filteredTours, `Tours_Thang_${filterMonth}`)" class="btn btn-accent w-full sm:w-auto" :disabled="filterMonth === 'all'">
+                            <i class="fas fa-file-excel mr-2"></i>Xuất Excel
+                        </button>
+                    </div>
+                </div>
+                <div class="card bg-base-100 shadow-lg border border-base-200 overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Cty / Mã Tour</th>
+                                    <th>NBD</th>
+                                    <th class="text-right">T.Tiền</th>
+                                </tr>
+                            </thead>
+                            <tbody v-for="tour in filteredTours" :key="tour.id">
+                                <tr class="hover tour-list-row">
+                                    <td>
+                                        <div class="font-bold">{{ getCompanyName(tour.companyId) }}</div>
+                                        <div class="text-sm opacity-60">{{ tour.id }}</div>
+                                    </td>
+                                    <td>{{ formatDate(tour.startDate) }}</td>
+                                    <td class="text-right font-mono font-semibold">{{ formatCurrencyWithK(grandTotalForTour(tour)) }}</td>
+                                </tr>
+                                <tr class="action-row">
+                                    <td colspan="3" class="p-2">
+                                        <div class="flex justify-end space-x-1">
+                                            <button @click="sendTourEmail(tour)" class="btn btn-ghost btn-sm btn-circle" title="Gửi Email"><i class="fas fa-paper-plane"></i></button>
+                                            <button @click="exportToExcel([tour], tour.id)" class="btn btn-ghost btn-sm btn-circle text-success" title="Xuất Excel"><i class="fas fa-file-excel"></i></button>
+                                            <button @click="copyTour(tour)" class="btn btn-ghost btn-sm btn-circle" title="Sao chép"><i class="fas fa-copy"></i></button>
+                                            <button @click="showTourForm(tour)" class="btn btn-ghost btn-sm btn-circle" title="Sửa"><i class="fas fa-pencil-alt"></i></button>
+                                            <button @click="deleteTour(tour.id)" class="btn btn-ghost btn-sm btn-circle text-error" title="Xóa"><i class="fas fa-trash-alt"></i></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                             <tbody v-if="filteredTours.length === 0">
+                                <tr>
+                                    <td colspan="3" class="text-center py-12 text-base-content/60">Chưa có tour nào để hiển thị.</td>
+                                </tr>
+                            </tbody>
+                            <tfoot v-if="filterMonth !== 'all' && filteredTours.length > 0">
+                                <tr class="font-bold text-lg">
+                                    <td colspan="2">Tổng cộng tháng {{ filterMonth }}</td>
+                                    <td class="text-right font-mono">{{ formatCurrencyWithK(monthlyTotal) }}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tour Add/Edit Form View -->
+            <div v-if="currentTour">
+                <h2 class="text-2xl font-bold mb-4">{{ currentTour.originalId ? 'Sửa Tour ' + currentTour.originalId : 'Tạo Tour Mới' }}</h2>
+                
+                <!-- TTC -->
+                <div class="form-section">
+                    <div class="card-body space-y-4">
+                        <div class="grid grid-cols-1">
+                             <div>
+                                <label class="label py-0"><span class="label-text font-semibold">Mã Tour</span></label>
+                                <input type="text" v-model="currentTour.id" class="input input-bordered" placeholder="Nhập mã tour (vd: HUI-001)">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                                <label class="label py-0"><span class="label-text font-semibold">HDV</span></label>
+                                <input type="text" v-model="currentTour.guide" class="input input-bordered">
+                            </div>
+                            <div>
+                                <label class="label py-0"><span class="label-text font-semibold">QT</span></label>
+                                <select v-model="currentTour.nationalityId" class="select select-bordered">
+                                    <option v-for="n in masterData.nationalities" :value="n.id">{{ n.name }}</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="label py-0"><span class="label-text font-semibold">Cty</span></label>
+                                <select v-model="currentTour.companyId" class="select select-bordered">
+                                    <option v-for="c in masterData.companies" :value="c.id">{{ c.name }}</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="label py-0"><span class="label-text font-semibold">NBD</span></label>
+                                <input type="date" v-model="currentTour.startDate" class="input input-bordered w-full">
+                            </div>
+                            <div>
+                                <label class="label py-0"><span class="label-text font-semibold">NKT</span></label>
+                                <input type="date" v-model="currentTour.endDate" class="input input-bordered w-full">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                             <div>
+                                <label class="label py-0"><span class="label-text font-semibold">NL</span></label>
+                                <div class="join w-full">
+                                    <button @click="currentTour.paxAdult = Math.max(0, currentTour.paxAdult - 1)" class="btn join-item">-</button>
+                                    <input type="text" v-model.number="currentTour.paxAdult" class="input input-bordered join-item text-center w-full">
+                                    <button @click="currentTour.paxAdult++" class="btn join-item">+</button>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="label py-0"><span class="label-text font-semibold">TE</span></label>
+                                <div class="join w-full">
+                                    <button @click="currentTour.paxChild = Math.max(0, currentTour.paxChild - 1)" class="btn join-item">-</button>
+                                    <input type="text" v-model.number="currentTour.paxChild" class="input input-bordered join-item text-center w-full">
+                                    <button @click="currentTour.paxChild++" class="btn join-item">+</button>
+                                </div>
+                            </div>
+                        </div>
+                         <div>
+                            <label class="label py-0"><span class="label-text font-semibold">GC</span></label>
+                            <input type="text" v-model="currentTour.notes" class="input input-bordered">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 1. CP Vé -->
+                <div class="form-section">
+                    <div class="card-body">
+                        <h3 class="card-title">1. CP Vé</h3>
+                        <div class="flex flex-col sm:flex-row gap-3 mb-4 items-end">
+                            <div class="w-full flex-1">
+                                <label class="label"><span class="label-text font-semibold">Tỉnh</span></label>
+                                <select class="select select-bordered w-full" v-model="ticketForm.provinceId" @change="ticketForm.locationId = ''">
+                                    <option value="">-- Chọn tỉnh --</option>
+                                    <option v-for="p in sortedProvinces" :value="p.id">{{ p.name }}</option>
+                                </select>
+                            </div>
+                            <div class="w-full flex-1">
+                                <label class="label"><span class="label-text font-semibold">Đ.Điểm</span></label>
+                                <select class="select select-bordered w-full" v-model="ticketForm.locationId">
+                                    <option value="">-- Chọn địa điểm --</option>
+                                    <option v-for="l in filteredLocations" :value="l.id">{{ l.name }}</option>
+                                </select>
+                            </div>
+                            <button @click="addTicket" class="btn btn-secondary w-full sm:w-auto">Thêm</button>
+                        </div>
+                        <div class="divider"></div>
+                        <div class="overflow-x-auto">
+                            <table class="table table-sm w-full">
+                                <thead>
+                                    <tr>
+                                        <th class="w-2/5">Tên</th>
+                                        <th class="w-1/5 text-center">SL</th>
+                                        <th class="w-1/5 text-right">ĐG</th>
+                                        <th class="w-1/5 text-right">TT</th>
+                                        <th class="w-auto text-right"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="(ticket, index) in currentTour.tickets" :key="ticket.locationId">
+                                        <td class="font-semibold">Vé: {{ getLocationName(ticket.locationId) }}</td>
+                                        <td class="text-center">{{ totalPax }}</td>
+                                        <td class="text-right font-mono">{{ formatCurrencyWithK(getLocationPrice(ticket.locationId)) }}</td>
+                                        <td class="text-right font-mono">{{ formatCurrencyWithK(getLocationPrice(ticket.locationId) * totalPax) }}</td>
+                                        <td class="text-right">
+                                            <button @click="currentTour.tickets.splice(index, 1)" class="btn btn-ghost btn-xs btn-circle text-error"><i class="fas fa-times"></i></button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="text-right font-bold mt-3 text-lg">Tổng Vé: {{ formatCurrency(totalTicketCost) }}</div>
+                    </div>
+                </div>
+                
+                <!-- 2. CP Vận Hành -->
+                <div class="form-section">
+                    <div class="card-body">
+                        <h3 class="card-title">2. CP Vận Hành</h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 mb-4 items-end">
+                            <div class="sm:col-span-5">
+                                <label class="label"><span class="label-text font-semibold">Chọn CP</span></label>
+                                <select class="select select-bordered w-full" v-model="serviceForm.detailedExpenseId">
+                                    <option value="">-- Chọn từ danh sách --</option>
+                                    <option v-for="s in masterData.detailedExpenses" :value="s.id">{{ s.name }} ({{formatCurrencyWithK(s.amount)}})</option>
+                                </select>
+                            </div>
+                            <div class="sm:col-span-3">
+                                <label class="label"><span class="label-text font-semibold">SL</span></label>
+                                <div class="join w-full">
+                                    <button @click="serviceForm.quantity = Math.max(1, serviceForm.quantity - 1)" class="btn join-item">-</button>
+                                    <input type="text" v-model.number="serviceForm.quantity" class="input input-bordered join-item text-center w-full">
+                                    <button @click="serviceForm.quantity++" class="btn join-item">+</button>
+                                </div>
+                            </div>
+                            <div class="sm:col-span-4">
+                                <button @click="addOperatingCost" class="btn btn-secondary w-full">Thêm CP</button>
+                            </div>
+                        </div>
+                        <div class="divider"></div>
+                        
+                        <div class="overflow-x-auto">
+                            <table class="table table-sm w-full">
+                                <thead>
+                                    <tr>
+                                        <th>Tên</th>
+                                        <th class="text-center">SL</th>
+                                        <th class="text-right">ĐG</th>
+                                        <th class="text-right">TT</th>
+                                    </tr>
+                                </thead>
+                                <tbody v-for="(item, index) in currentTour.operatingCosts" :key="item.id">
+                                    <tr class="tour-list-row">
+                                        <td class="font-semibold">{{ getDetailedExpenseName(item.detailedExpenseId) }}</td>
+                                        <td class="text-center">
+                                            <div class="join justify-center">
+                                                <button @click="item.quantity = Math.max(1, item.quantity - 1)" class="btn btn-xs join-item">-</button>
+                                                <input type="text" v-model.number="item.quantity" class="input input-xs input-bordered join-item w-12 text-center">
+                                                <button @click="item.quantity++" class="btn btn-xs join-item">+</button>
+                                            </div>
+                                        </td>
+                                        <td class="text-right font-mono">{{ formatCurrencyWithK(item.price) }}</td>
+                                        <td class="text-right font-mono">{{ formatCurrencyWithK(item.price * item.quantity) }}</td>
+                                    </tr>
+                                    <tr class="action-row">
+                                        <td colspan="4" class="p-1">
+                                            <div class="flex justify-end space-x-1">
+                                                <button @click="copyOperatingCost(item, index)" class="btn btn-ghost btn-xs btn-circle" title="Sao chép"><i class="fas fa-copy"></i></button>
+                                                <button @click="currentTour.operatingCosts.splice(index, 1)" class="btn btn-ghost btn-xs btn-circle text-error" title="Xóa"><i class="fas fa-times"></i></button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="divider"></div>
+                        <div class="text-right font-bold text-lg">Tổng CPVH: {{ formatCurrency(totalOperatingCost) }}</div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- 3. Phát sinh -->
+                    <div class="form-section">
+                        <div class="card-body">
+                            <h3 class="card-title">3. PS</h3>
+                            <div v-for="(item, index) in currentTour.incidentals" :key="item.id" class="space-y-2">
+                                <div class="grid grid-cols-2 gap-2">
+                                    <input type="text" v-model="item.name" placeholder="Tên PS" class="input input-bordered input-sm col-span-2">
+                                    <input type="text" @input="formatInputCurrency($event, item, 'amount')" :value="formatCurrency(item.amount)" placeholder="Số tiền" class="input input-bordered col-span-1 text-right input-sm">
+                                    <input type="text" v-model="item.notes" placeholder="Ghi chú" class="input input-bordered col-span-1 input-sm">
+                                </div>
+                                <div class="text-right">
+                                    <button @click="copyIncidental(item, index)" class="btn btn-ghost btn-xs btn-circle" title="Sao chép"><i class="fas fa-copy"></i></button>
+                                    <button @click="currentTour.incidentals.splice(index, 1)" class="btn btn-ghost btn-xs btn-circle text-error" title="Xóa"><i class="fas fa-times"></i></button>
+                                </div>
+                            </div>
+                            <button @click="currentTour.incidentals.push({ id: Date.now(), name: '', amount: 0, notes: '' })" class="btn btn-secondary mt-2">
+                                <i class="fas fa-plus mr-2"></i> Thêm PS
+                            </button>
+                            <div class="divider"></div>
+                            <div class="text-right font-bold text-lg">Tổng PS: {{ formatCurrency(totalIncidentalCost) }}</div>
+                        </div>
+                    </div>
+                    <!-- 4. Công tác phí -->
+                     <div class="form-section">
+                         <div class="card-body">
+                            <h3 class="card-title">4. CTP</h3>
+                            <div v-if="workDaysExceeded" class="alert alert-warning text-xs p-2">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                <span>Cảnh báo: Tổng ngày CTP > ngày tour.</span>
+                            </div>
+                            <div class="space-y-4 mt-2">
+                                <div class="grid grid-cols-2 gap-4 items-center">
+                                    <label class="label"><span class="label-text font-semibold">CTN (QB)</span></label>
+                                    <div class="join">
+                                        <button @click="currentTour.fees.workDaysQB = Math.max(0, currentTour.fees.workDaysQB - 1)" class="btn btn-sm join-item">-</button>
+                                        <input type="text" v-model.number="currentTour.fees.workDaysQB" class="input input-sm input-bordered join-item w-full text-center">
+                                        <button @click="currentTour.fees.workDaysQB++" class="btn btn-sm join-item" :disabled="totalWorkDays >= tourDuration">+</button>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-4 items-center">
+                                    <label class="label"><span class="label-text font-semibold">CTN (Khác)</span></label>
+                                    <div class="join">
+                                        <button @click="currentTour.fees.workDaysOther = Math.max(0, currentTour.fees.workDaysOther - 1)" class="btn btn-sm join-item">-</button>
+                                        <input type="text" v-model.number="currentTour.fees.workDaysOther" class="input input-sm input-bordered join-item w-full text-center">
+                                        <button @click="currentTour.fees.workDaysOther++" class="btn btn-sm join-item" :disabled="totalWorkDays >= tourDuration">+</button>
+                                    </div>
+                                </div>
+                                 <div class="grid grid-cols-2 gap-4 items-center">
+                                    <label class="label"><span class="label-text font-semibold">Lưu Đêm</span></label>
+                                    <div class="join">
+                                        <button @click="currentTour.fees.overnightStays = Math.max(0, currentTour.fees.overnightStays - 1)" class="btn btn-sm join-item">-</button>
+                                        <input type="text" v-model.number="currentTour.fees.overnightStays" class="input input-sm input-bordered join-item w-full text-center">
+                                        <button @click="currentTour.fees.overnightStays++" class="btn btn-sm join-item">+</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="divider"></div>
+                            <div class="text-right font-bold text-lg">Tổng CTP: {{ formatCurrency(totalFeeCost) }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 5. Tạm ứng / Thu hộ -->
+                <div class="form-section lg:col-span-2">
+                    <div class="card-body">
+                        <h3 class="card-title">5. TƯ/TH</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="label"><span class="label-text font-semibold">TƯ</span></label>
+                                <input type="text" @input="formatInputCurrency($event, currentTour.payment, 'advance')" :value="formatCurrency(currentTour.payment.advance)" class="input input-bordered text-right">
+                            </div>
+                            <div>
+                                <label class="label"><span class="label-text font-semibold">TH Cty</span></label>
+                                <input type="text" @input="formatInputCurrency($event, currentTour.payment, 'collect')" :value="formatCurrency(currentTour.payment.collect)" class="input input-bordered text-right">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 6. Tổng kết -->
+                <div class="form-section bg-neutral text-neutral-content lg:col-span-2">
+                    <div class="card-body">
+                        <h3 class="card-title text-accent">6. T.KẾT</h3>
+                        <div class="stats stats-vertical shadow w-full">
+                          <div class="stat">
+                            <div class="stat-title">Tổng CP</div>
+                            <div class="stat-value font-mono">{{ formatCurrency(grandTotal) }}</div>
+                          </div>
+                          <div class="stat">
+                            <div class="stat-title">Sau TƯ</div>
+                            <div class="stat-value font-mono">{{ formatCurrency(balanceAfterAdvance) }}</div>
+                          </div>
+                          <div class="stat">
+                            <div class="stat-title">Sau TH</div>
+                            <div class="stat-value font-mono">{{ formatCurrency(balanceAfterCollection) }}</div>
+                          </div>
+                           <div class="stat">
+                            <div class="stat-title text-xl" :class="finalSettlement >= 0 ? 'text-success' : 'text-error'">{{ finalSettlement >= 0 ? 'HDV Hoàn Lại' : 'CTY Trả Thêm' }}</div>
+                            <div class="stat-value text-2xl font-mono" :class="finalSettlement >= 0 ? 'text-success' : 'text-error'">{{ formatCurrency(Math.abs(finalSettlement)) }}</div>
+                          </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sticky Footer for Actions -->
+                <div class="sticky-footer flex justify-end space-x-3">
+                    <button @click="currentTour = null" class="btn">Hủy</button>
+                    <button @click="saveTour" class="btn btn-primary"><i class="fas fa-save mr-2"></i>Lưu</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- DATA MANAGEMENT VIEW -->
+        <div v-if="activeTab === 'data'">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                
+                <div class="card bg-base-100 shadow-lg border border-base-200">
+                    <div class="card-body p-5">
+                        <h3 class="card-title">I. DS Tỉnh</h3>
+                        <div class="flex gap-2 mb-3">
+                            <input type="text" v-model="newItems.province" @keyup.enter="addMasterDataItem('provinces', {name: newItems.province})" placeholder="Tên tỉnh mới" class="input input-bordered flex-grow">
+                            <button @click="addMasterDataItem('provinces', {name: newItems.province})" class="btn btn-primary flex-shrink-0">Thêm</button>
+                        </div>
+                         <div class="overflow-x-auto max-h-60">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Tên</th>
+                                        <th class="text-right"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="item in masterData.provinces" :key="item.id" class="hover">
+                                        <th>{{ item.id }}</th>
+                                        <td>
+                                            <span v-if="editingItem?.id !== item.id">{{ item.name }}</span>
+                                            <input v-else type="text" v-model="editingItem.text" @keyup.enter="saveEdit" @keyup.esc="cancelEdit" class="input input-xs input-bordered w-full">
+                                        </td>
+                                        <td class="text-right">
+                                            <button v-if="editingItem?.id !== item.id" @click="startEditing(item, 'provinces')" class="btn btn-ghost btn-xs btn-circle"><i class="fas fa-pencil-alt"></i></button>
+                                            <button v-if="editingItem?.id === item.id" @click="saveEdit" class="btn btn-ghost btn-xs btn-circle text-success"><i class="fas fa-check"></i></button>
+                                            <button v-if="editingItem?.id === item.id" @click="cancelEdit" class="btn btn-ghost btn-xs btn-circle text-error"><i class="fas fa-times"></i></button>
+                                            <button @click="deleteMasterDataItem('provinces', item.id)" class="btn btn-ghost btn-xs btn-circle text-error"><i class="fas fa-trash-alt"></i></button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                         <div class="divider">Import</div>
+                        <textarea v-model="pasteTexts.provinces" class="textarea textarea-bordered h-24" placeholder="Dán danh sách tỉnh tại đây, mỗi tỉnh một dòng..."></textarea>
+                        <button @click="importFromPastedText('provinces')" class="btn btn-secondary mt-2 w-full">Import</button>
+                    </div>
+                </div>
+
+                <div class="card bg-base-100 shadow-lg border border-base-200 lg:col-span-2">
+                    <div class="card-body p-5">
+                        <h3 class="card-title">II. DS Địa Điểm</h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-3 items-end">
+                            <div class="sm:col-span-2">
+                                <label class="label"><span class="label-text text-xs">Tên ĐĐ</span></label>
+                                <input type="text" v-model="newItems.location.name" placeholder="VD: Đại Nội Huế" class="input input-bordered">
+                            </div>
+                            <div>
+                                <label class="label"><span class="label-text text-xs">Tỉnh</span></label>
+                                <select v-model="newItems.location.provinceId" class="select select-bordered">
+                                    <option value="">-- Chọn tỉnh --</option>
+                                    <option v-for="p in masterData.provinces" :value="p.id">{{ p.name }}</option>
+                                </select>
+                            </div>
+                            <div class="flex gap-2">
+                                <div class="flex-grow">
+                                    <label class="label"><span class="label-text text-xs">Giá vé</span></label>
+                                    <input type="text" @input="formatInputCurrency($event, newItems.location, 'price')" placeholder="Bắt buộc" class="input input-bordered">
+                                </div>
+                                <button @click="addMasterDataItem('locations', newItems.location)" class="btn btn-primary self-end">Thêm</button>
+                            </div>
+                        </div>
+                        <div class="divider"></div>
+                        <div class="overflow-x-auto max-h-60">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Tên</th>
+                                        <th>Tỉnh</th>
+                                        <th class="text-right">Giá vé</th>
+                                        <th class="text-right"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="item in sortedLocations" :key="item.id" class="hover">
+                                        <td>{{ item.name }}</td>
+                                        <td>{{ getProvinceName(item.provinceId) }}</td>
+                                        <td class="text-right font-mono">{{ formatCurrencyWithK(item.price) }}</td>
+                                        <td class="text-right">
+                                            <button @click="copyMasterDataItem(item, 'locations')" class="btn btn-ghost btn-xs btn-circle" title="Sao chép"><i class="fas fa-copy"></i></button>
+                                            <button @click="openEditModal(item, 'locations')" class="btn btn-ghost btn-xs btn-circle"><i class="fas fa-pencil-alt"></i></button>
+                                            <button @click="deleteMasterDataItem('locations', item.id)" class="btn btn-ghost btn-xs btn-circle text-error"><i class="fas fa-trash-alt"></i></button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="divider">Import</div>
+                        <textarea v-model="pasteTexts.locations" class="textarea textarea-bordered h-24" placeholder="Dán danh sách địa điểm tại đây. Định dạng: Tên,Mã Tỉnh,Giá vé"></textarea>
+                        <button @click="importFromPastedText('locations')" class="btn btn-secondary mt-2 w-full">Import</button>
+                    </div>
+                </div>
+
+                <div class="card bg-base-100 shadow-lg border border-base-200">
+                    <div class="card-body p-5">
+                        <h3 class="card-title">III. DS Loại Chi Phí</h3>
+                        <div class="flex gap-2 mb-3">
+                            <input type="text" v-model="newItems.expenseType" @keyup.enter="addMasterDataItem('expenseTypes', {name: newItems.expenseType})" placeholder="Tên loại chi phí mới" class="input input-bordered flex-grow">
+                            <button @click="addMasterDataItem('expenseTypes', {name: newItems.expenseType})" class="btn btn-primary flex-shrink-0">Thêm</button>
+                        </div>
+                        <div class="overflow-x-auto max-h-60">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Tên</th>
+                                        <th class="text-right"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="item in masterData.expenseTypes" :key="item.id" class="hover">
+                                        <th>{{ item.id }}</th>
+                                        <td>
+                                            <span v-if="editingItem?.id !== item.id">{{ item.name }}</span>
+                                            <input v-else type="text" v-model="editingItem.text" @keyup.enter="saveEdit" @keyup.esc="cancelEdit" class="input input-xs input-bordered w-full">
+                                        </td>
+                                        <td class="text-right">
+                                            <button v-if="editingItem?.id !== item.id" @click="startEditing(item, 'expenseTypes')" class="btn btn-ghost btn-xs btn-circle"><i class="fas fa-pencil-alt"></i></button>
+                                            <button v-if="editingItem?.id === item.id" @click="saveEdit" class="btn btn-ghost btn-xs btn-circle text-success"><i class="fas fa-check"></i></button>
+                                            <button v-if="editingItem?.id === item.id" @click="cancelEdit" class="btn btn-ghost btn-xs btn-circle text-error"><i class="fas fa-times"></i></button>
+                                            <button @click="deleteMasterDataItem('expenseTypes', item.id)" class="btn btn-ghost btn-xs btn-circle text-error"><i class="fas fa-trash-alt"></i></button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                         <div class="divider">Import</div>
+                        <textarea v-model="pasteTexts.expenseTypes" class="textarea textarea-bordered h-24" placeholder="Dán danh sách loại chi phí tại đây, mỗi loại một dòng..."></textarea>
+                        <button @click="importFromPastedText('expenseTypes')" class="btn btn-secondary mt-2 w-full">Import</button>
+                    </div>
+                </div>
+
+                <div class="card bg-base-100 shadow-lg border border-base-200 lg:col-span-2">
+                    <div class="card-body p-5">
+                        <h3 class="card-title">IV. DS Chi Phí Chi Tiết</h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-3 items-end">
+                            <div class="sm:col-span-2">
+                                <label class="label"><span class="label-text text-xs">Tên CP</span></label>
+                                <input type="text" v-model="newItems.detailedExpense.name" placeholder="VD: Ăn trưa, Nước uống" class="input input-bordered">
+                            </div>
+                            <div>
+                                <label class="label"><span class="label-text text-xs">Loại CP</span></label>
+                                <select v-model="newItems.detailedExpense.expenseTypeId" class="select select-bordered">
+                                    <option value="">-- Chọn loại --</option>
+                                    <option v-for="et in masterData.expenseTypes" :value="et.id">{{ et.name }}</option>
+                                </select>
+                            </div>
+                            <div class="flex gap-2">
+                                 <div class="flex-grow">
+                                    <label class="label"><span class="label-text text-xs">Số tiền</span></label>
+                                    <input type="text" @input="formatInputCurrency($event, newItems.detailedExpense, 'amount')" placeholder="Bắt buộc" class="input input-bordered">
+                                </div>
+                                <button @click="addMasterDataItem('detailedExpenses', newItems.detailedExpense)" class="btn btn-primary self-end">Thêm</button>
+                            </div>
+                        </div>
+                        <div class="divider"></div>
+                        <div class="overflow-x-auto max-h-60">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Tên</th>
+                                        <th>Loại</th>
+                                        <th class="text-right">Số tiền</th>
+                                        <th class="text-right"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="item in masterData.detailedExpenses" :key="item.id" class="hover">
+                                        <td>{{ item.name }}</td>
+                                        <td>{{ getExpenseTypeName(item.expenseTypeId) }}</td>
+                                        <td class="text-right font-mono">{{ formatCurrencyWithK(item.amount) }}</td>
+                                        <td class="text-right">
+                                            <button @click="copyMasterDataItem(item, 'detailedExpenses')" class="btn btn-ghost btn-xs btn-circle" title="Sao chép"><i class="fas fa-copy"></i></button>
+                                            <button @click="openEditModal(item, 'detailedExpenses')" class="btn btn-ghost btn-xs btn-circle"><i class="fas fa-pencil-alt"></i></button>
+                                            <button @click="deleteMasterDataItem('detailedExpenses', item.id)" class="btn btn-ghost btn-xs btn-circle text-error"><i class="fas fa-trash-alt"></i></button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="divider">Import</div>
+                        <textarea v-model="pasteTexts.detailedExpenses" class="textarea textarea-bordered h-24" placeholder="Dán danh sách chi phí tại đây. Định dạng: Tên,Mã Loại,Số tiền"></textarea>
+                        <button @click="importFromPastedText('detailedExpenses')" class="btn btn-secondary mt-2 w-full">Import</button>
+                    </div>
+                </div>
+
+                <div class="card bg-base-100 shadow-lg border border-base-200">
+                    <div class="card-body p-5">
+                        <h3 class="card-title">V. DS Công Ty</h3>
+                        <div class="flex gap-2 mb-3">
+                            <input type="text" v-model="newItems.company" @keyup.enter="addMasterDataItem('companies', {name: newItems.company})" placeholder="Tên công ty mới" class="input input-bordered flex-grow">
+                            <button @click="addMasterDataItem('companies', {name: newItems.company})" class="btn btn-primary flex-shrink-0">Thêm</button>
+                        </div>
+                        <div class="overflow-x-auto max-h-60">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Tên</th>
+                                        <th class="text-right"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="item in masterData.companies" :key="item.id" class="hover">
+                                        <th>{{ item.id }}</th>
+                                        <td>
+                                            <span v-if="editingItem?.id !== item.id">{{ item.name }}</span>
+                                            <input v-else type="text" v-model="editingItem.text" @keyup.enter="saveEdit" @keyup.esc="cancelEdit" class="input input-xs input-bordered w-full">
+                                        </td>
+                                        <td class="text-right">
+                                            <button v-if="editingItem?.id !== item.id" @click="startEditing(item, 'companies')" class="btn btn-ghost btn-xs btn-circle"><i class="fas fa-pencil-alt"></i></button>
+                                            <button v-if="editingItem?.id === item.id" @click="saveEdit" class="btn btn-ghost btn-xs btn-circle text-success"><i class="fas fa-check"></i></button>
+                                            <button v-if="editingItem?.id === item.id" @click="cancelEdit" class="btn btn-ghost btn-xs btn-circle text-error"><i class="fas fa-times"></i></button>
+                                            <button @click="deleteMasterDataItem('companies', item.id)" class="btn btn-ghost btn-xs btn-circle text-error"><i class="fas fa-trash-alt"></i></button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="divider">Import</div>
+                        <textarea v-model="pasteTexts.companies" class="textarea textarea-bordered h-24" placeholder="Dán danh sách công ty tại đây, mỗi công ty một dòng..."></textarea>
+                        <button @click="importFromPastedText('companies')" class="btn btn-secondary mt-2 w-full">Import</button>
+                    </div>
+                </div>
+                
+                <div class="card bg-base-100 shadow-lg border border-base-200">
+                    <div class="card-body p-5">
+                        <h3 class="card-title">VI. DS Quốc Tịch</h3>
+                        <div class="flex gap-2 mb-3">
+                            <input type="text" v-model="newItems.nationality" @keyup.enter="addMasterDataItem('nationalities', {name: newItems.nationality})" placeholder="Tên quốc tịch mới" class="input input-bordered flex-grow">
+                            <button @click="addMasterDataItem('nationalities', {name: newItems.nationality})" class="btn btn-primary flex-shrink-0">Thêm</button>
+                        </div>
+                        <div class="overflow-x-auto max-h-60">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Tên</th>
+                                        <th class="text-right"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="item in masterData.nationalities" :key="item.id" class="hover">
+                                        <th>{{ item.id }}</th>
+                                        <td>
+                                            <span v-if="editingItem?.id !== item.id">{{ item.name }}</span>
+                                            <input v-else type="text" v-model="editingItem.text" @keyup.enter="saveEdit" @keyup.esc="cancelEdit" class="input input-xs input-bordered w-full">
+                                        </td>
+                                        <td class="text-right">
+                                            <button v-if="editingItem?.id !== item.id" @click="startEditing(item, 'nationalities')" class="btn btn-ghost btn-xs btn-circle"><i class="fas fa-pencil-alt"></i></button>
+                                            <button v-if="editingItem?.id === item.id" @click="saveEdit" class="btn btn-ghost btn-xs btn-circle text-success"><i class="fas fa-check"></i></button>
+                                            <button v-if="editingItem?.id === item.id" @click="cancelEdit" class="btn btn-ghost btn-xs btn-circle text-error"><i class="fas fa-times"></i></button>
+                                            <button @click="deleteMasterDataItem('nationalities', item.id)" class="btn btn-ghost btn-xs btn-circle text-error"><i class="fas fa-trash-alt"></i></button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                         <div class="divider">Import</div>
+                        <textarea v-model="pasteTexts.nationalities" class="textarea textarea-bordered h-24" placeholder="Dán danh sách quốc tịch tại đây, mỗi quốc tịch một dòng..."></textarea>
+                        <button @click="importFromPastedText('nationalities')" class="btn btn-secondary mt-2 w-full">Import</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <dialog id="edit_modal" class="modal">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg">Sửa thông tin</h3>
+            
+            <div v-if="editModal.target === 'locations'" class="py-4 space-y-4">
+                 <div>
+                    <label class="label"><span class="label-text font-semibold">Tên địa điểm</span></label>
+                    <input type="text" v-model="editModal.data.name" class="input input-bordered w-full">
+                </div>
+                <div>
+                    <label class="label"><span class="label-text font-semibold">Tỉnh</span></label>
+                    <select v-model="editModal.data.provinceId" class="select select-bordered w-full">
+                        <option v-for="p in masterData.provinces" :value="p.id">{{ p.name }}</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="label"><span class="label-text font-semibold">Giá vé</span></label>
+                    <input type="text" :value="formatCurrency(editModal.data.price)" @input="formatInputCurrency($event, editModal.data, 'price')" class="input input-bordered w-full">
+                </div>
+            </div>
+            
+            <div v-if="editModal.target === 'detailedExpenses'" class="py-4 space-y-4">
+                 <div>
+                    <label class="label"><span class="label-text font-semibold">Tên chi phí</span></label>
+                    <input type="text" v-model="editModal.data.name" class="input input-bordered w-full">
+                </div>
+                <div>
+                    <label class="label"><span class="label-text font-semibold">Loại chi phí</span></label>
+                    <select v-model="editModal.data.expenseTypeId" class="select select-bordered w-full">
+                        <option v-for="et in masterData.expenseTypes" :value="et.id">{{ et.name }}</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="label"><span class="label-text font-semibold">Số tiền</span></label>
+                    <input type="text" :value="formatCurrency(editModal.data.amount)" @input="formatInputCurrency($event, editModal.data, 'amount')" class="input input-bordered w-full">
+                </div>
+            </div>
+
+            <div class="modal-action">
+                <form method="dialog" class="w-full flex justify-between">
+                    <button class="btn">Đóng</button>
+                    <button @click.prevent="saveEditModal" class="btn btn-primary">Lưu thay đổi</button>
+                </form>
+            </div>
+        </div>
+    </dialog>
+
+</div>
+
+<script>
+const { createApp, ref, reactive, computed, watch } = Vue;
+
+
+// ====== LOCALSTORAGE BACKUP AUTO ======
+const STORAGE_KEY = "tour_management_v1";
+
+function saveAllToLocalStorage(masterData, tours) {
+    const data = {
+        masterData: JSON.parse(JSON.stringify(masterData)),
+        tours: JSON.parse(JSON.stringify(tours)),
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+function loadAllFromLocalStorage(masterData, tours) {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+        try {
+            const data = JSON.parse(raw);
+            if (data.masterData) {
+                Object.keys(masterData).forEach(key => {
+                    if (data.masterData[key]) {
+                        masterData[key].splice(0, masterData[key].length, ...data.masterData[key]);
+                    }
+                });
+            }
+            if (data.tours) {
+                tours.splice(0, tours.length, ...data.tours);
+            }
+        } catch (e) {
+            alert("Lỗi khi đọc dữ liệu localStorage: " + e);
+        }
+    }
+}
+// ====== END LOCALSTORAGE BACKUP AUTO ======
+
+const App = {
+    setup() {
+        // STATE
+        const activeTab = ref('tours');
+        const filterMonth = ref('all');
+        const editingItem = ref(null); // For inline editing
+        const editModal = reactive({ target: null, data: {} });
+
+        const pasteTexts = reactive({
+            companies: '', nationalities: '', provinces: '', expenseTypes: '', locations: '', detailedExpenses: ''
+        });
+        
+        const masterData = reactive({
+            companies: [
+                { id: 1, name: 'Vietravel' },
+                { id: 2, name: 'Saigontourist' },
+                { id: 3, name: 'Hanoi Tourist' }
+            ],
+            nationalities: [
+                { id: 1, name: 'Việt Nam' },
+                { id: 2, name: 'Hoa Kỳ' },
+                { id: 3, name: 'Hàn Quốc' }
+            ],
+            provinces: [
+                { id: 1, name: 'Quảng Bình', order: 1 },
+                { id: 2, name: 'Quảng Trị', order: 2 },
+                { id: 3, name: 'Huế', order: 3 },
+                { id: 4, name: 'Đà Nẵng', order: 4 },
+                { id: 5, name: 'Hội An', order: 5 },
+                { id: 6, name: 'Mỹ Sơn', order: 6 },
+            ],
+            locations: [
+                { id: 101, provinceId: 3, name: 'Đại Nội', price: 200000 },
+                { id: 102, provinceId: 3, name: 'Lăng Khải Định', price: 150000 },
+                { id: 103, provinceId: 4, name: 'Ngũ Hành Sơn', price: 40000 },
+                { id: 104, provinceId: 4, name: 'Bà Nà Hills', price: 850000 },
+                { id: 105, provinceId: 1, name: 'Động Phong Nha', price: 150000 },
+                { id: 106, provinceId: 5, name: 'Phố cổ Hội An', price: 120000 },
+            ],
+            expenseTypes: [
+                { id: 1, name: 'Ăn uống' },
+                { id: 2, name: 'Di chuyển' },
+                { id: 3, name: 'Lưu trú' },
+                { id: 4, name: 'Dịch vụ khác'}
+            ],
+            detailedExpenses: [
+                { id: 1, expenseTypeId: 1, name: 'Ăn trưa', amount: 150000 },
+                { id: 2, expenseTypeId: 1, name: 'Ăn tối', amount: 200000 },
+                { id: 3, expenseTypeId: 2, name: 'Taxi', amount: 100000 },
+                { id: 4, expenseTypeId: 4, name: 'Nước uống', amount: 10000 },
+                { id: 5, expenseTypeId: 4, name: 'Đạp xe cùng khách', amount: 50000 },
+                { id: 6, expenseTypeId: 4, name: 'Đi ăn tối riêng', amount: 100000 },
+                { id: 7, expenseTypeId: 4, name: 'Xem show', amount: 250000 },
+            ]
+        });
+
+        const tours = reactive([
+             { id: 'TOUR001', originalId: 'TOUR001', companyId: 1, guide: 'Cao Hữu Tú', nationalityId: 1, startDate: '2025-07-10', endDate: '2025-07-12', paxAdult: 2, paxChild: 1, notes: 'Khách VIP', tickets: [{ locationId: 101 }, { locationId: 102 }], operatingCosts: [{ id: Date.now(), detailedExpenseId: 1, quantity: 2, price: 150000}], fees: { workDaysQB: 0, workDaysOther: 2, overnightStays: 1, airportPickup: true }, incidentals: [{ id: 1, name: 'Cà phê', amount: 50000, notes: '' }], payment: { advance: 3000000, collect: 0 } }
+        ]);
+
+        const currentTour = ref(null);
+// Tải lại dữ liệu từ localStorage nếu có
+loadAllFromLocalStorage(masterData, tours);
+
+        const newItems = reactive({
+            company: '',
+            nationality: '',
+            province: '',
+            location: { name: '', provinceId: '', price: 0 },
+            expenseType: '',
+            detailedExpense: { name: '', expenseTypeId: '', amount: 0 }
+        });
+
+        const ticketForm = reactive({
+            provinceId: '',
+            locationId: ''
+        });
+
+        const serviceForm = reactive({
+            detailedExpenseId: '',
+            quantity: 1
+        });
+        
+        const toasts = ref([]);
+// Tự động lưu khi có thay đổi vào localStorage
+watch(
+    [
+        () => masterData.companies,
+        () => masterData.nationalities,
+        () => masterData.provinces,
+        () => masterData.locations,
+        () => masterData.expenseTypes,
+        () => masterData.detailedExpenses,
+        () => tours
+    ],
+    () => saveAllToLocalStorage(masterData, tours),
+    { deep: true }
+);
+
+
+        // COMPUTED PROPERTIES
+        const tourDuration = computed(() => {
+            if (!currentTour.value || !currentTour.value.startDate || !currentTour.value.endDate) return 0;
+            const start = new Date(currentTour.value.startDate);
+            const end = new Date(currentTour.value.endDate);
+            if (isNaN(start) || isNaN(end) || end < start) return 0;
+            const diffTime = Math.abs(end - start);
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+            return diffDays;
+        });
+        
+        const totalWorkDays = computed(() => {
+            if (!currentTour.value) return 0;
+            return (currentTour.value.fees.workDaysQB || 0) + (currentTour.value.fees.workDaysOther || 0);
+        });
+
+        const workDaysExceeded = computed(() => {
+            if (!currentTour.value) return false;
+            return totalWorkDays.value > tourDuration.value;
+        });
+
+        const totalOperatingCost = computed(() => {
+            if (!currentTour.value?.operatingCosts) return 0;
+            return currentTour.value.operatingCosts.reduce((sum, item) => {
+                const effectiveQuantity = item.quantity;
+                return sum + (item.price * effectiveQuantity);
+            }, 0);
+        });
+
+        const filteredTours = computed(() => {
+            if (filterMonth.value === 'all') {
+                return tours;
+            }
+            return tours.filter(t => new Date(t.startDate).getMonth() + 1 == filterMonth.value);
+        });
+
+        const monthlyTotal = computed(() => {
+            if (filterMonth.value === 'all') return 0;
+            return filteredTours.value.reduce((sum, tour) => sum + grandTotalForTour(tour), 0);
+        });
+
+        const totalPax = computed(() => (currentTour.value?.paxAdult || 0) + (currentTour.value?.paxChild || 0));
+
+        const filteredLocations = computed(() => {
+            if (!ticketForm.provinceId) return [];
+            return masterData.locations.filter(l => l.provinceId == ticketForm.provinceId);
+        });
+        
+        const sortedProvinces = computed(() => [...masterData.provinces].sort((a, b) => a.order - b.order));
+        
+        const sortedLocations = computed(() => {
+            const provinceOrder = masterData.provinces.reduce((acc, p) => ({...acc, [p.id]: p.order }), {});
+            return [...masterData.locations].sort((a, b) => provinceOrder[a.provinceId] - provinceOrder[b.provinceId]);
+        });
+        
+        const totalTicketCost = computed(() => {
+            if (!currentTour.value) return 0;
+            return currentTour.value.tickets.reduce((sum, ticket) => {
+                const location = masterData.locations.find(l => l.id === ticket.locationId);
+                return sum + (location ? location.price * totalPax.value : 0);
+            }, 0);
+        });
+
+        const totalFeeCost = computed(() => {
+            if (!currentTour.value) return 0;
+            const fees = currentTour.value.fees;
+            return (fees.workDaysQB * 800000) + (fees.workDaysOther * 600000) + (fees.overnightStays * 150000);
+        });
+
+        const totalIncidentalCost = computed(() => {
+            if (!currentTour.value) return 0;
+            return currentTour.value.incidentals.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+        });
+
+        const grandTotal = computed(() => {
+            if (!currentTour.value) return 0;
+            return totalTicketCost.value + totalOperatingCost.value + totalFeeCost.value + totalIncidentalCost.value;
+        });
+        
+        const balanceAfterAdvance = computed(() => {
+             if (!currentTour.value) return 0;
+             return grandTotal.value - currentTour.value.payment.advance;
+        });
+
+        const balanceAfterCollection = computed(() => {
+             if (!currentTour.value) return 0;
+             return balanceAfterAdvance.value - currentTour.value.payment.collect;
+        });
+        
+        const finalSettlement = computed(() => {
+            if (!currentTour.value) return 0;
+            return currentTour.value.payment.advance - (grandTotal.value - currentTour.value.payment.collect);
+        });
+
+        watch(totalPax, (newVal) => {
+            serviceForm.quantity = newVal > 0 ? newVal : 1;
+        });
+
+        // METHODS
+        const showToast = (message, type = 'success') => {
+            const toastId = Date.now();
+            const newToast = {
+                id: toastId,
+                message,
+                type: type === 'success' ? 'alert-success' : 'alert-error',
+                icon: type === 'success' ? 'fas fa-check-circle' : 'fas fa-exclamation-circle',
+            };
+            toasts.value.push(newToast);
+            setTimeout(() => {
+                const index = toasts.value.findIndex(t => t.id === toastId);
+                if (index > -1) {
+                    toasts.value.splice(index, 1);
+                }
+            }, 4000);
+        };
+
+        const getNewId = (list) => (list.length > 0 ? Math.max(...list.map(i => i.id)) : 0) + 1;
+
+        const getEmptyTour = () => ({
+            id: '',
+            originalId: null,
+            companyId: masterData.companies[0]?.id || '',
+            guide: 'Cao Hữu Tú',
+            nationalityId: masterData.nationalities[0]?.id || '',
+            startDate: new Date().toISOString().split('T')[0],
+            endDate: new Date().toISOString().split('T')[0],
+            paxAdult: 2,
+            paxChild: 0,
+            notes: '',
+            tickets: [],
+            operatingCosts: [],
+            fees: { workDaysQB: 0, workDaysOther: 0, overnightStays: 0, airportPickup: false },
+            incidentals: [],
+            payment: { advance: 0, collect: 0 }
+        });
+
+        const showTourForm = (tourData) => {
+            if (tourData.id) {
+                currentTour.value = JSON.parse(JSON.stringify(tourData));
+                if (!currentTour.value.operatingCosts) {
+                    currentTour.value.operatingCosts = [];
+                }
+                currentTour.value.originalId = tourData.id;
+            } else {
+                currentTour.value = getEmptyTour();
+            }
+        };
+
+        const saveTour = () => {
+            if (!currentTour.value.id) {
+                showToast('Mã tour không được để trống', 'error');
+                return;
+            }
+            if (!currentTour.value.companyId || !currentTour.value.nationalityId) {
+                showToast('Vui lòng chọn Công ty và Quốc tịch', 'error');
+                return;
+            }
+            
+            if (currentTour.value.originalId && currentTour.value.originalId !== currentTour.value.id) {
+                 const existing = tours.find(t => t.id === currentTour.value.id);
+                 if (existing) {
+                     showToast(`Mã tour '${currentTour.value.id}' đã tồn tại.`, 'error');
+                     return;
+                 }
+            }
+
+            if (currentTour.value.originalId) {
+                const index = tours.findIndex(t => t.id === currentTour.value.originalId);
+                if (index !== -1) {
+                    tours[index] = JSON.parse(JSON.stringify(currentTour.value));
+                    tours[index].originalId = currentTour.value.id;
+                }
+            } else {
+                 const existing = tours.find(t => t.id === currentTour.value.id);
+                 if (existing) {
+                     showToast(`Mã tour '${currentTour.value.id}' đã tồn tại.`, 'error');
+                     return;
+                 }
+                currentTour.value.originalId = currentTour.value.id;
+                tours.unshift(JSON.parse(JSON.stringify(currentTour.value)));
+            }
+            showToast('Lưu tour thành công!');
+            currentTour.value = null;
+        };
+
+        const deleteTour = (tourId) => {
+            const index = tours.findIndex(t => t.id === tourId);
+            if (index !== -1) {
+                tours.splice(index, 1);
+                showToast('Đã xóa tour ' + tourId);
+            }
+        };
+        
+        const copyTour = (tourToCopy) => {
+            const newTour = JSON.parse(JSON.stringify(tourToCopy));
+            let baseId = tourToCopy.id.split('-COPY')[0];
+            let newId = `${baseId}-COPY`;
+            let counter = 1;
+            while (tours.some(t => t.id === newId)) {
+                counter++;
+                newId = `${baseId}-COPY-${counter}`;
+            }
+            newTour.id = newId;
+            newTour.originalId = null;
+            tours.unshift(newTour);
+            showToast(`Đã sao chép tour ${tourToCopy.id} thành ${newId}`);
+        };
+
+        const addTicket = () => {
+            if (!ticketForm.locationId) return;
+            if (currentTour.value.tickets.some(t => t.locationId === ticketForm.locationId)) {
+                showToast('Địa điểm này đã được thêm', 'error');
+                return;
+            }
+            currentTour.value.tickets.push({ locationId: ticketForm.locationId });
+            
+            const provinceOrder = masterData.provinces.reduce((acc, p) => ({...acc, [p.id]: p.order }), {});
+            const locationProvinceMap = masterData.locations.reduce((acc, l) => ({...acc, [l.id]: l.provinceId }), {});
+
+            currentTour.value.tickets.sort((a,b) => {
+                return provinceOrder[locationProvinceMap[a.locationId]] - provinceOrder[locationProvinceMap[b.locationId]];
+            });
+
+            ticketForm.locationId = '';
+        };
+        
+        const addOperatingCost = () => {
+            if (!serviceForm.detailedExpenseId) {
+                showToast('Vui lòng chọn một chi phí.', 'error');
+                return;
+            }
+            const expense = masterData.detailedExpenses.find(s => s.id === serviceForm.detailedExpenseId);
+            if (!expense) return;
+
+            currentTour.value.operatingCosts.push({
+                id: Date.now(),
+                detailedExpenseId: expense.id,
+                quantity: serviceForm.quantity,
+                price: expense.amount // Snapshot the price
+            });
+
+            serviceForm.detailedExpenseId = '';
+            serviceForm.quantity = 1;
+        };
+
+        const copyOperatingCost = (itemToCopy, index) => {
+            const newItem = JSON.parse(JSON.stringify(itemToCopy));
+            newItem.id = Date.now();
+            currentTour.value.operatingCosts.splice(index + 1, 0, newItem);
+        };
+
+        const copyIncidental = (itemToCopy, index) => {
+            const newItem = JSON.parse(JSON.stringify(itemToCopy));
+            newItem.id = Date.now();
+            currentTour.value.incidentals.splice(index + 1, 0, newItem);
+        };
+
+        const isLastInProvince = (index) => {
+            const tickets = currentTour.value.tickets;
+            if (index === tickets.length - 1) return false;
+            const getLocationProvince = (locationId) => masterData.locations.find(l => l.id === locationId)?.provinceId;
+            const currentProvince = getLocationProvince(tickets[index].locationId);
+            const nextProvince = getLocationProvince(tickets[index + 1].locationId);
+            return currentProvince !== nextProvince;
+        };
+
+        const formatCurrency = (value) => {
+            if (value === null || value === undefined || isNaN(Number(value))) return '0';
+            return new Intl.NumberFormat('vi-VN').format(value);
+        };
+
+        const formatCurrencyWithK = (value) => {
+            if (value === null || value === undefined || isNaN(Number(value))) return '0';
+            const numValue = Number(value);
+            if (numValue >= 1000) {
+                const result = numValue / 1000;
+                return (result % 1 === 0 ? result : result.toFixed(1)) + 'k';
+            }
+            return numValue.toString();
+        };
+
+        const formatInputCurrency = (event, item = null, key = null) => {
+            let value = event.target.value;
+            if (value.toLowerCase().endsWith('k')) {
+                value = parseFloat(value.slice(0, -1)) * 1000;
+            } else {
+                value = value.replace(/\D/g, '');
+            }
+            const numValue = Number(value) || 0;
+            if (item && key) item[key] = numValue;
+            event.target.value = formatCurrency(numValue);
+        };
+        
+        const addMasterDataItem = (listName, data, showFeedback = true) => {
+            if (!data.name) {
+                if (showFeedback) showToast('Tên không được để trống', 'error');
+                return false;
+            }
+            const newItem = { id: getNewId(masterData[listName]), ...data };
+            if (listName === 'provinces') newItem['order'] = newItem.id;
+            masterData[listName].push(newItem);
+            
+            // Reset input
+            const singleName = listName.slice(0, -1);
+            if(newItems[singleName] !== undefined && typeof newItems[singleName] === 'string') newItems[singleName] = '';
+            if(newItems.location?.name !== undefined && listName === 'locations') newItems.location = { name: '', provinceId: '', price: 0 };
+            if(newItems.detailedExpense?.name !== undefined && listName === 'detailedExpenses') newItems.detailedExpense = { name: '', expenseTypeId: '', amount: 0 };
+
+            if (showFeedback) showToast('Thêm thành công!', 'success');
+            return true;
+        };
+
+        const copyMasterDataItem = (itemToCopy, listName) => {
+            const list = masterData[listName];
+            if (!list) return;
+
+            const newItem = JSON.parse(JSON.stringify(itemToCopy));
+            newItem.id = getNewId(list);
+            newItem.name = `${itemToCopy.name}-COPY`;
+
+            const originalIndex = list.findIndex(item => item.id === itemToCopy.id);
+            if (originalIndex !== -1) {
+                list.splice(originalIndex + 1, 0, newItem);
+            } else {
+                list.push(newItem);
+            }
+            showToast(`Đã sao chép: ${itemToCopy.name}`);
+        };
+        
+        const deleteMasterDataItem = (listName, id) => {
+            const index = masterData[listName].findIndex(i => i.id === id);
+            if (index !== -1) {
+                masterData[listName].splice(index, 1);
+                showToast('Xóa thành công', 'success');
+            }
+        };
+
+        const startEditing = (item, listName) => {
+            editingItem.value = { id: item.id, text: item.name, list: listName };
+        };
+
+        const saveEdit = () => {
+            if (!editingItem.value) return;
+            const { id, text, list } = editingItem.value;
+            const itemToUpdate = masterData[list].find(i => i.id === id);
+            if (itemToUpdate) {
+                itemToUpdate.name = text;
+            }
+            editingItem.value = null;
+        };
+
+        const cancelEdit = () => {
+            editingItem.value = null;
+        };
+
+        const openEditModal = (item, target) => {
+            editModal.target = target;
+            editModal.data = JSON.parse(JSON.stringify(item)); // Deep copy
+            window.edit_modal.showModal();
+        };
+
+        const saveEditModal = () => {
+            const { target, data } = editModal;
+            const index = masterData[target].findIndex(item => item.id === data.id);
+            if (index !== -1) {
+                masterData[target][index] = data;
+                showToast('Cập nhật thành công!');
+            }
+            window.edit_modal.close();
+        };
+
+        const importFromPastedText = (targetList) => {
+            const text = pasteTexts[targetList];
+            if (!text.trim()) {
+                showToast('Không có nội dung để import.', 'error');
+                return;
+            }
+            const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+            let successCount = 0;
+            let errorCount = 0;
+
+            try {
+                switch (targetList) {
+                    case 'companies':
+                    case 'nationalities':
+                    case 'provinces':
+                    case 'expenseTypes':
+                        lines.forEach(line => {
+                            const name = line.trim();
+                            if (name && !masterData[targetList].some(item => item.name.toLowerCase() === name.toLowerCase())) {
+                                addMasterDataItem(targetList, {name}, false);
+                                successCount++;
+                            }
+                        });
+                        break;
+                    
+                    case 'locations':
+                        lines.forEach(line => {
+                            const parts = line.split(',').map(p => p.trim());
+                            if (parts.length === 3) {
+                                const [name, provinceId, price] = parts;
+                                if (name && !isNaN(Number(provinceId)) && !isNaN(Number(price))) {
+                                    if (!masterData.locations.some(l => l.name.toLowerCase() === name.toLowerCase())) {
+                                        if (addMasterDataItem('locations', { name, provinceId: Number(provinceId), price: Number(price) }, false)) {
+                                            successCount++;
+                                        } else { errorCount++; }
+                                    }
+                                } else { errorCount++; }
+                            } else { errorCount++; }
+                        });
+                        break;
+                    
+                    case 'detailedExpenses':
+                        lines.forEach(line => {
+                            const parts = line.split(',').map(p => p.trim());
+                            if (parts.length === 3) {
+                                const [name, expenseTypeId, amount] = parts;
+                                if (name && !isNaN(Number(expenseTypeId)) && !isNaN(Number(amount))) {
+                                    if (!masterData.detailedExpenses.some(de => de.name.toLowerCase() === name.toLowerCase())) {
+                                        if (addMasterDataItem('detailedExpenses', { name, expenseTypeId: Number(expenseTypeId), amount: Number(amount) }, false)) {
+                                            successCount++;
+                                        } else { errorCount++; }
+                                    }
+                                } else { errorCount++; }
+                            } else { errorCount++; }
+                        });
+                        break;
+                }
+                let message = `Import hoàn tất.`;
+                if (successCount > 0) message += ` Đã thêm ${successCount} mục mới.`;
+                if (errorCount > 0) message += ` ${errorCount} dòng bị lỗi.`;
+                showToast(message, errorCount > 0 && successCount === 0 ? 'error' : 'success');
+                pasteTexts[targetList] = ''; // Clear textarea after import
+            } catch (err) {
+                console.error("Import error:", err);
+                showToast('Đã xảy ra lỗi trong quá trình import.', 'error');
+            }
+        };
+        
+        const getCompanyName = (id) => masterData.companies.find(c => c.id === id)?.name || 'N/A';
+        const getProvinceName = (id) => masterData.provinces.find(p => p.id === id)?.name || 'N/A';
+        const getLocationName = (id) => masterData.locations.find(l => l.id === id)?.name || 'N/A';
+        const getLocationPrice = (id) => masterData.locations.find(l => l.id === id)?.price || 0;
+        const getExpenseTypeName = (id) => masterData.expenseTypes.find(et => et.id === id)?.name || 'N/A';
+        const getDetailedExpenseName = (id) => masterData.detailedExpenses.find(de => de.id === id)?.name || 'N/A';
+        const formatDate = (dateString) => {
+            if (!dateString) return 'N/A';
+            const date = new Date(dateString);
+            return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
+        };
+
+        const grandTotalForTour = (tour) => {
+            const tourTotalPax = tour.paxAdult + tour.paxChild;
+            
+            const tickets = (tour.tickets || []).reduce((sum, ticket) => {
+                const price = getLocationPrice(ticket.locationId);
+                return sum + (price * tourTotalPax);
+            }, 0);
+            
+            const operating = (tour.operatingCosts || []).reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+            const fees = (tour.fees.workDaysQB * 800000) + (tour.fees.workDaysOther * 600000) + (tour.fees.overnightStays * 150000);
+            const incidentals = (tour.incidentals || []).reduce((sum, item) => sum + Number(item.amount || 0), 0);
+
+            return tickets + operating + fees + incidentals;
+        };
+
+        const sendTourEmail = (tour) => {
+            exportToExcel([tour], tour.id);
+            showToast('File Excel đã được tải. Vui lòng đính kèm vào email.', 'success');
+            const subject = encodeURIComponent(tour.id);
+            const body = encodeURIComponent('việt á tour');
+            window.location.href = `mailto:huutu289@gmail.com?subject=${subject}&body=${body}`;
+        };
+
+        const exportToExcel = (toursToExport, fileName) => {
+            const wb = XLSX.utils.book_new();
+            const ws_data = [];
+
+            const borderAll = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } };
+            const headerStyle = { font: { bold: true, color: { rgb: "FFFFFFFF" } }, fill: { fgColor: { rgb: "FF4F4F4F" } }, alignment: { horizontal: 'center', vertical: 'center' }, border: borderAll };
+            const subHeaderStyleLeft = { font: { bold: true }, alignment: { horizontal: 'left' }, border: borderAll };
+            const subHeaderStyleCenter = { font: { bold: true }, alignment: { horizontal: 'center' }, border: borderAll };
+            const textCellStyle = { alignment: { horizontal: 'left' }, border: borderAll };
+            const numberCellStyle = { alignment: { horizontal: 'right' }, border: borderAll };
+            const currencyCellStyle = { alignment: { horizontal: 'right' }, numFmt: '#,##0', border: borderAll };
+            const titleStyle = { font: { bold: true, sz: 16, color: {rgb: "FF1E40AF"} } };
+            const summaryTitleStyle = { font: { bold: true, sz: 14, color: {rgb: "FFC00000"} } };
+            const separatorStyle = { fill: { fgColor: { rgb: "FFD3D3D3" } } };
+
+            let monthlyTotals = { cost: 0, advance: 0, collect: 0, settlement: 0 };
+
+            toursToExport.forEach((tour, tourIndex) => {
+                const tourTotalPax = tour.paxAdult + tour.paxChild;
+
+                ws_data.push([{v: `CHI TIẾT TOUR: ${tour.id}`, s: titleStyle }]);
+                ws_data.push([{v: 'Mã Tour', s: subHeaderStyleLeft}, {v: tour.id, s: textCellStyle}]);
+                ws_data.push([{v: 'Công ty', s: subHeaderStyleLeft}, {v: getCompanyName(tour.companyId), s: textCellStyle}]);
+                ws_data.push([{v: 'Hướng dẫn viên', s: subHeaderStyleLeft}, {v: tour.guide, s: textCellStyle}]);
+                ws_data.push([{v: 'Ngày', s: subHeaderStyleLeft}, {v: `${formatDate(tour.startDate)} - ${formatDate(tour.endDate)}`, s: textCellStyle}]);
+                ws_data.push([{v: 'Số khách', s: subHeaderStyleLeft}, {v: `${tourTotalPax} (${tour.paxAdult} NL, ${tour.paxChild} TE)`, s: textCellStyle}]);
+                ws_data.push([]);
+
+                const addSection = (title, headers, dataRows) => {
+                    ws_data.push([{v: title, s: headerStyle}, null, null, null]);
+                    ws_data.push(headers.map(h => ({v: h, s: subHeaderStyleCenter})));
+                    dataRows.forEach(row => {
+                        ws_data.push([
+                            {v: row[0], s: textCellStyle},
+                            {v: row[1], t: 'n', s: numberCellStyle},
+                            {v: row[2], t: 'n', s: currencyCellStyle},
+                            {v: row[3], t: 'n', s: currencyCellStyle}
+                        ]);
+                    });
+                    ws_data.push([]);
+                }
+
+                const operatingCostRows = [];
+                (tour.tickets || []).forEach(ticket => {
+                    const price = getLocationPrice(ticket.locationId);
+                    operatingCostRows.push([`Vé: ${getLocationName(ticket.locationId)}`, tourTotalPax, price, price * tourTotalPax]);
+                });
+                (tour.operatingCosts || []).forEach(item => {
+                    operatingCostRows.push([getDetailedExpenseName(item.detailedExpenseId), item.quantity, item.price, item.price * item.quantity]);
+                });
+                (tour.incidentals || []).forEach(item => {
+                    operatingCostRows.push([item.name, 1, item.amount, item.amount]);
+                });
+                addSection('Tổng Chi Phí Vận Hành (Vé, Dịch vụ, Phát sinh)', ['Hạng mục', 'Số lượng', 'Đơn giá', 'Thành tiền'], operatingCostRows);
+
+                const feeRows = [];
+                if(tour.fees.workDaysQB > 0) feeRows.push(['Công tác ngày (QB)', tour.fees.workDaysQB, 800000, tour.fees.workDaysQB * 800000]);
+                if(tour.fees.workDaysOther > 0) feeRows.push(['Công tác ngày (Khác)', tour.fees.workDaysOther, 600000, tour.fees.workDaysOther * 600000]);
+                if(tour.fees.overnightStays > 0) feeRows.push(['Lưu đêm/xe', tour.fees.overnightStays, 150000, tour.fees.overnightStays * 150000]);
+                addSection('Công tác phí', ['Hạng mục', 'Số lượng', 'Đơn giá', 'Thành tiền'], feeRows);
+
+                const tourGrandTotal = grandTotalForTour(tour);
+                const tourFinalSettlement = tour.payment.advance - (tourGrandTotal - tour.payment.collect);
+                ws_data.push([{v: 'Tổng kết Tour', s: headerStyle}, null, null, null]);
+                ws_data.push([{v: 'Tổng chi phí', s: subHeaderStyleLeft}, '', '', {v: tourGrandTotal, t:'n', s: currencyCellStyle}]);
+                ws_data.push([{v: 'Tạm ứng', s: subHeaderStyleLeft}, '', '', {v: tour.payment.advance, t:'n', s: currencyCellStyle}]);
+                ws_data.push([{v: 'Thu hộ', s: subHeaderStyleLeft}, '', '', {v: tour.payment.collect, t:'n', s: currencyCellStyle}]);
+                ws_data.push([{v: tourFinalSettlement >= 0 ? 'HDV hoàn lại CTY' : 'CTY trả thêm HDV', s: subHeaderStyleLeft}, '', '', {v: Math.abs(tourFinalSettlement), t:'n', s: currencyCellStyle}]);
+                
+                monthlyTotals.cost += tourGrandTotal;
+                monthlyTotals.advance += tour.payment.advance;
+                monthlyTotals.collect += tour.payment.collect;
+                monthlyTotals.settlement += tourFinalSettlement;
+
+                if (tourIndex < toursToExport.length - 1) {
+                    ws_data.push([]); 
+                    ws_data.push([{v: '', s: separatorStyle}, {v: '', s: separatorStyle}, {v: '', s: separatorStyle}, {v: '', s: separatorStyle}]);
+                    ws_data.push([]);
+                }
+            });
+
+            if (toursToExport.length > 1) {
+                ws_data.push([]);
+                ws_data.push([]);
+                ws_data.push([{v: `TỔNG KẾT THÁNG ${filterMonth.value}`, s: summaryTitleStyle}]);
+                ws_data.push([{v: 'Tổng chi phí tháng', s: subHeaderStyleLeft}, '', '', {v: monthlyTotals.cost, t: 'n', s: currencyCellStyle}]);
+                ws_data.push([{v: 'Tổng tạm ứng tháng', s: subHeaderStyleLeft}, '', '', {v: monthlyTotals.advance, t: 'n', s: currencyCellStyle}]);
+                ws_data.push([{v: 'Tổng thu hộ tháng', s: subHeaderStyleLeft}, '', '', {v: monthlyTotals.collect, t: 'n', s: currencyCellStyle}]);
+                ws_data.push([{v: 'Tổng quyết toán tháng', s: subHeaderStyleLeft}, '', '', {v: monthlyTotals.settlement, t: 'n', s: currencyCellStyle}]);
+            }
+
+            const ws = XLSX.utils.aoa_to_sheet(ws_data, {cellStyles: true});
+            
+            const merges = [];
+            for (let i = 0; i < ws_data.length; i++) {
+                if (ws_data[i][0]?.s === headerStyle || ws_data[i][0]?.s === summaryTitleStyle || ws_data[i][0]?.s === titleStyle) {
+                    merges.push({ s: { r: i, c: 0 }, e: { r: i, c: 3 } });
+                }
+            }
+            ws['!merges'] = merges;
+
+            ws['!cols'] = [{wch: 35}, {wch: 15}, {wch: 15}, {wch: 20}];
+            XLSX.utils.book_append_sheet(wb, ws, "ChiTietTour");
+            XLSX.writeFile(wb, `${fileName}.xlsx`);
+        };
+
+        return {
+            activeTab, filterMonth, masterData, tours, currentTour, newItems, ticketForm, toasts, 
+            editingItem, editModal, pasteTexts, serviceForm,
+            filteredTours, totalPax, filteredLocations, sortedProvinces, sortedLocations,
+            totalTicketCost, totalFeeCost, totalIncidentalCost, grandTotal,
+            tourDuration, totalOperatingCost,
+            totalWorkDays, workDaysExceeded, balanceAfterAdvance, balanceAfterCollection, finalSettlement,
+            monthlyTotal,
+            showToast, showTourForm, saveTour, deleteTour, copyTour, addTicket, addOperatingCost, copyOperatingCost, copyIncidental, isLastInProvince,
+            formatCurrency, formatCurrencyWithK, formatInputCurrency, addMasterDataItem, copyMasterDataItem,
+            deleteMasterDataItem, getCompanyName, getProvinceName, getLocationName, getLocationPrice,
+            getExpenseTypeName, getDetailedExpenseName, formatDate, 
+            startEditing, saveEdit, cancelEdit,
+            openEditModal, saveEditModal,
+            importFromPastedText, exportToExcel, grandTotalForTour, sendTourEmail
+        };
+    }
+};
+
+createApp(App).mount('#app');
+</script>
+
+</body>
+</html>
