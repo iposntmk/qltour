@@ -32,6 +32,24 @@
             padding-bottom: 0.75rem !important;
         }
     </style>
+
+<!-- Firebase App (Core SDK) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<!-- Firebase Firestore SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyD9rK4XH3K_uri1oEBJeIeD9vQPtqESqlE",
+    authDomain: "quanlytour-56f1e.firebaseapp.com",
+    projectId: "quanlytour-56f1e",
+    storageBucket: "quanlytour-56f1e.appspot.com",
+    messagingSenderId: "1029307764431",
+    appId: "1:1029307764431:web:abe3269f2d918db753f1ba"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+</script>
+
 </head>
 <body>
 
@@ -742,38 +760,32 @@
 const { createApp, ref, reactive, computed, watch } = Vue;
 
 
-// ====== LOCALSTORAGE BACKUP AUTO ======
-const STORAGE_KEY = "tour_management_v1";
-
-function saveAllToLocalStorage(masterData, tours) {
-    const data = {
-        masterData: JSON.parse(JSON.stringify(masterData)),
-        tours: JSON.parse(JSON.stringify(tours)),
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+// ====== FIRESTORE CLOUD BACKUP AUTO ======
+function saveAllToFirestore(masterData, tours) {
+  db.collection("appdata").doc("main").set({
+    masterData: JSON.parse(JSON.stringify(masterData)),
+    tours: JSON.parse(JSON.stringify(tours))
+  });
 }
-
-function loadAllFromLocalStorage(masterData, tours) {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-        try {
-            const data = JSON.parse(raw);
-            if (data.masterData) {
-                Object.keys(masterData).forEach(key => {
-                    if (data.masterData[key]) {
-                        masterData[key].splice(0, masterData[key].length, ...data.masterData[key]);
-                    }
-                });
-            }
-            if (data.tours) {
-                tours.splice(0, tours.length, ...data.tours);
-            }
-        } catch (e) {
-            alert("Lỗi khi đọc dữ liệu localStorage: " + e);
-        }
+function loadAllFromFirestore(masterData, tours, callback) {
+  db.collection("appdata").doc("main").get().then((doc) => {
+    if (doc.exists) {
+      const data = doc.data();
+      if (data.masterData) {
+        Object.keys(masterData).forEach(key => {
+          if (data.masterData[key]) {
+            masterData[key].splice(0, masterData[key].length, ...data.masterData[key]);
+          }
+        });
+      }
+      if (data.tours) {
+        tours.splice(0, tours.length, ...data.tours);
+      }
+      if (callback) callback();
     }
+  });
 }
-// ====== END LOCALSTORAGE BACKUP AUTO ======
+// ====== END FIRESTORE CLOUD BACKUP AUTO ======
 
 const App = {
     setup() {
@@ -837,7 +849,7 @@ const App = {
 
         const currentTour = ref(null);
 // Tải lại dữ liệu từ localStorage nếu có
-loadAllFromLocalStorage(masterData, tours);
+loadAllFromFirestore(masterData, tours);
 
         const newItems = reactive({
             company: '',
@@ -870,7 +882,7 @@ watch(
         () => masterData.detailedExpenses,
         () => tours
     ],
-    () => saveAllToLocalStorage(masterData, tours),
+    () => saveAllToFirestore(masterData, tours),
     { deep: true }
 );
 
